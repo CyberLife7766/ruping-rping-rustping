@@ -1,0 +1,3 @@
+# Requirements for RuPing installer
+pyinstaller>=5.0
+pywin32>=311

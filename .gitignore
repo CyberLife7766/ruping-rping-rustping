@@ -1,0 +1,77 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock file (uncomment if you want to commit it)
+# Cargo.lock
+
+#venv
+.venv
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows specific
+*.exe.stackdump
+Desktop.ini
+
+# Test files and temporary scripts
+test*.cmd
+test*.ps1
+quick_test.*
+diagnose_*
+*_test.*
+temp_*
+
+# Log files
+*.log
+logs/
+
+# Installation artifacts
+installer_temp/
+install_log.txt
+installer/dist/
+installer/build/
+installer/*.exe
+installer/ruping.exe
+installer/ruping-uninstaller.exe
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Temporary files
+*.tmp
+*.temp
+
+# Release artifacts (keep source, exclude binaries)
+release/*.exe
