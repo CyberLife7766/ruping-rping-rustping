@@ -125,6 +125,12 @@ impl WinApiIcmpSocket {
     }
 }
 
+// 说明：Windows 的 ICMP 句柄（IcmpCreateFile 返回的句柄）可跨线程使用。
+// 该类型内部仅持有一个不透明句柄指针，不涉及 Rust 内部共享可变数据。
+// 因此在本场景下实现 Send/Sync 是安全的。
+unsafe impl Send for WinApiIcmpSocket {}
+unsafe impl Sync for WinApiIcmpSocket {}
+
 impl Drop for WinApiIcmpSocket {
     fn drop(&mut self) {
         if !self.handle.is_null() {

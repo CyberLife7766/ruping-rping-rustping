@@ -231,7 +231,7 @@ IconIndex=0
         """Save installation information"""
         info = {
             "install_path": str(install_dir),
-            "version": "0.1.0",
+            "version": "0.2.0",
             "aliases": self.aliases,
             "installed_files": [
                 self.exe_name,

@@ -9,6 +9,11 @@ pub struct PingStatistics {
     pub max_time: f64,
     pub total_time: f64,
     pub start_time: Instant,
+    // 采样与抖动/方差相关
+    samples: Vec<f64>,
+    last_time_ms: Option<f64>,
+    jitter_sum: f64,
+    jitter_count: u32,
 }
 
 impl PingStatistics {
@@ -21,6 +26,10 @@ impl PingStatistics {
             max_time: 0.0,
             total_time: 0.0,
             start_time: Instant::now(),
+            samples: Vec::new(),
+            last_time_ms: None,
+            jitter_sum: 0.0,
+            jitter_count: 0,
         }
     }
     
@@ -31,14 +40,23 @@ impl PingStatistics {
     pub fn record_received(&mut self, time_ms: f64) {
         self.packets_received += 1;
         self.total_time += time_ms;
-        
+
         if time_ms < self.min_time {
             self.min_time = time_ms;
         }
-        
+
         if time_ms > self.max_time {
             self.max_time = time_ms;
         }
+
+        // 保存样本
+        self.samples.push(time_ms);
+        // 更新抖动（相邻样本差的绝对值均值）
+        if let Some(prev) = self.last_time_ms {
+            self.jitter_sum += (time_ms - prev).abs();
+            self.jitter_count += 1;
+        }
+        self.last_time_ms = Some(time_ms);
     }
     
     pub fn record_lost(&mut self) {
@@ -57,6 +75,51 @@ impl PingStatistics {
             return 0.0;
         }
         self.total_time / self.packets_received as f64
+    }
+
+    fn percentile(&self, p: f64) -> f64 {
+        if self.samples.is_empty() { return 0.0; }
+        let mut v = self.samples.clone();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let n = v.len();
+        // 最近邻法
+        let rank = (p * (n as f64 - 1.0)).round() as usize;
+        v[rank]
+    }
+
+    pub fn p50(&self) -> f64 { self.percentile(0.50) }
+    pub fn p90(&self) -> f64 { self.percentile(0.90) }
+    pub fn p99(&self) -> f64 { self.percentile(0.99) }
+
+    pub fn std_deviation(&self) -> f64 {
+        let n = self.samples.len();
+        if n < 2 { return 0.0; }
+        let mean = self.average_time();
+        let var = self.samples.iter().map(|&x| {
+            let d = x - mean; d * d
+        }).sum::<f64>() / (n as f64);
+        var.sqrt()
+    }
+
+    pub fn jitter(&self) -> f64 {
+        if self.jitter_count == 0 { 0.0 } else { self.jitter_sum / self.jitter_count as f64 }
+    }
+
+    // 将另一份统计合并到当前对象，用于总体聚合
+    pub fn merge_from(&mut self, other: &PingStatistics) {
+        self.packets_sent += other.packets_sent;
+        self.packets_received += other.packets_received;
+        self.packets_lost += other.packets_lost;
+        if other.min_time.is_finite() { self.min_time = self.min_time.min(other.min_time); }
+        self.max_time = self.max_time.max(other.max_time);
+        self.total_time += other.total_time;
+        // 合并样本以支持总体百分位与标准差
+        if !other.samples.is_empty() {
+            self.samples.extend_from_slice(&other.samples);
+        }
+        // 合并抖动（按样本-1 计数加权）
+        self.jitter_sum += other.jitter_sum;
+        self.jitter_count += other.jitter_count;
     }
     
     pub fn format_summary(&self, target: &str) -> String {
@@ -79,6 +142,22 @@ impl PingStatistics {
                 self.max_time,
                 self.average_time()
             ));
+
+            // 高级统计
+            if self.samples.len() >= 1 {
+                summary.push_str(&format!(
+                    "    P50 = {:.0}ms，P90 = {:.0}ms，P99 = {:.0}ms",
+                    self.p50(), self.p90(), self.p99()
+                ));
+                if self.samples.len() >= 2 {
+                    summary.push_str(&format!(
+                        "，Jitter = {:.1}ms，StdDev = {:.1}ms\n",
+                        self.jitter(), self.std_deviation()
+                    ));
+                } else {
+                    summary.push('\n');
+                }
+            }
         }
         
         summary

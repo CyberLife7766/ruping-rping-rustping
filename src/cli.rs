@@ -3,7 +3,9 @@ use std::net::IpAddr;
 
 #[derive(Debug, Clone)]
 pub struct PingArgs {
-    pub target: String,
+    pub targets: Vec<String>,
+    pub targets_file: Option<String>,
+    pub cidrs: Vec<String>,
     pub continuous: bool,
     pub resolve_addresses: bool,
     pub count: Option<u32>,
@@ -23,12 +25,27 @@ pub struct PingArgs {
     pub hyper_v: bool,
     pub force_ipv4: bool,
     pub force_ipv6: bool,
+    pub concurrency: usize,
+    pub interval_ms: u64,
+    pub deadline_sec: Option<u64>,
+    // 输出控制
+    pub json_output: bool,
+    pub csv_output: bool,
+    pub summary_only: bool,
+    pub quiet: bool,
+    pub include_replies: bool,
+    // 结构化输出控制
+    pub output_path: Option<String>,
+    pub pretty_json: bool,
+    pub csv_no_headers: bool,
 }
 
 impl Default for PingArgs {
     fn default() -> Self {
         Self {
-            target: String::new(),
+            targets: Vec::new(),
+            targets_file: None,
+            cidrs: Vec::new(),
             continuous: false,
             resolve_addresses: false,
             count: Some(4), // Windows default
@@ -48,19 +65,45 @@ impl Default for PingArgs {
             hyper_v: false,
             force_ipv4: false,
             force_ipv6: false,
+            concurrency: 64,
+            interval_ms: 1000,
+            deadline_sec: None,
+            json_output: false,
+            csv_output: false,
+            summary_only: false,
+            quiet: false,
+            include_replies: false,
+            output_path: None,
+            pretty_json: false,
+            csv_no_headers: false,
         }
     }
 }
 
 pub fn build_cli() -> Command {
     Command::new("ruping")
-        .version("0.1.0")
+        .version("0.2.0")
         .about("A Rust implementation of Windows ping command")
         .arg(
             Arg::new("target")
-                .help("Target hostname or IP address")
-                .required(true)
-                .index(1)
+                .help("Target hostname or IP address (supports multiple)")
+                .required(false)
+                .num_args(1..)
+                .value_name("TARGETS")
+        )
+        .arg(
+            Arg::new("file")
+                .long("file")
+                .help("Read targets from file, one per line")
+                .value_name("PATH")
+        )
+        .arg(
+            Arg::new("cidr")
+                .long("cidr")
+                .help("Add targets from CIDR (IPv4), e.g. 192.168.1.0/30; can be repeated or comma-separated")
+                .value_name("CIDR")
+                .num_args(1..)
+                .value_delimiter(',')
         )
         .arg(
             Arg::new("continuous")
@@ -187,6 +230,78 @@ pub fn build_cli() -> Command {
                 .help("Force using IPv6")
                 .action(ArgAction::SetTrue)
         )
+        .arg(
+            Arg::new("concurrency")
+                .short('P')
+                .long("concurrency")
+                .help("Max concurrent hosts (1-256)")
+                .value_name("N")
+                .value_parser(clap::value_parser!(u32))
+        )
+        .arg(
+            Arg::new("interval")
+                .long("interval")
+                .help("Per-host send interval in milliseconds (default 1000)")
+                .value_name("ms")
+                .value_parser(clap::value_parser!(u64))
+        )
+        .arg(
+            Arg::new("deadline")
+                .long("deadline")
+                .help("Global deadline in seconds")
+                .value_name("sec")
+                .value_parser(clap::value_parser!(u64))
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .help("Output results in JSON format (suppresses per-reply printing)")
+                .action(ArgAction::SetTrue)
+        )
+        .arg(
+            Arg::new("csv")
+                .long("csv")
+                .help("Output results in CSV format (suppresses per-reply printing)")
+                .action(ArgAction::SetTrue)
+        )
+        .arg(
+            Arg::new("summary_only")
+                .long("summary-only")
+                .help("Only print per-host and overall summaries (no per-reply lines)")
+                .action(ArgAction::SetTrue)
+        )
+        .arg(
+            Arg::new("quiet")
+                .long("quiet")
+                .help("Suppress per-reply lines (headers still printed unless --summary-only)")
+                .action(ArgAction::SetTrue)
+        )
+        .arg(
+            Arg::new("include_replies")
+                .long("include-replies")
+                .help("Include each reply details in JSON/CSV output")
+                .action(ArgAction::SetTrue)
+        )
+        .arg(
+            Arg::new("output")
+                .long("output")
+                .short('o')
+                .value_name("path")
+                .help("Write JSON/CSV output to file (otherwise prints to stdout)")
+        )
+        .arg(
+            Arg::new("pretty")
+                .long("pretty")
+                .help("Pretty-print JSON output (indent/newlines)")
+                .action(ArgAction::SetTrue)
+        )
+        .arg(
+            Arg::new("headers")
+                .long("headers")
+                .value_name("mode")
+                .help("CSV headers mode: all|none (default: all)")
+                .default_value("all")
+        )
 }
 
 pub fn parse_args() -> anyhow::Result<PingArgs> {
@@ -194,7 +309,15 @@ pub fn parse_args() -> anyhow::Result<PingArgs> {
     
     let mut args = PingArgs::default();
     
-    args.target = matches.get_one::<String>("target").unwrap().clone();
+    if let Some(ts) = matches.get_many::<String>("target") {
+        args.targets = ts.cloned().collect();
+    }
+    if let Some(file) = matches.get_one::<String>("file") {
+        args.targets_file = Some(file.clone());
+    }
+    if let Some(cidr_vals) = matches.get_many::<String>("cidr") {
+        args.cidrs = cidr_vals.cloned().collect();
+    }
     args.continuous = matches.get_flag("continuous");
     args.resolve_addresses = matches.get_flag("resolve");
     args.dont_fragment = matches.get_flag("dont_fragment");
@@ -202,6 +325,14 @@ pub fn parse_args() -> anyhow::Result<PingArgs> {
     args.hyper_v = matches.get_flag("hyper_v");
     args.force_ipv4 = matches.get_flag("force_ipv4");
     args.force_ipv6 = matches.get_flag("force_ipv6");
+    args.json_output = matches.get_flag("json");
+    args.csv_output = matches.get_flag("csv");
+    args.summary_only = matches.get_flag("summary_only");
+    args.quiet = matches.get_flag("quiet");
+    args.include_replies = matches.get_flag("include_replies");
+    if let Some(path) = matches.get_one::<String>("output") { args.output_path = Some(path.clone()); }
+    args.pretty_json = matches.get_flag("pretty");
+    args.csv_no_headers = matches.get_one::<String>("headers").map(|s| s == "none").unwrap_or(false);
     
     if let Some(count) = matches.get_one::<u32>("count") {
         args.count = Some(*count);
@@ -251,6 +382,17 @@ pub fn parse_args() -> anyhow::Result<PingArgs> {
         args.strict_source_route = Some(hosts.cloned().collect());
     }
     
+    if let Some(cc) = matches.get_one::<u32>("concurrency") {
+        let v = (*cc).clamp(1, 256) as usize;
+        args.concurrency = v;
+    }
+    if let Some(iv) = matches.get_one::<u64>("interval") {
+        args.interval_ms = *iv;
+    }
+    if let Some(dl) = matches.get_one::<u64>("deadline") {
+        args.deadline_sec = Some(*dl);
+    }
+
     // Validation
     if args.force_ipv4 && args.force_ipv6 {
         return Err(anyhow::anyhow!("Cannot force both IPv4 and IPv6"));
@@ -258,6 +400,15 @@ pub fn parse_args() -> anyhow::Result<PingArgs> {
     
     if args.continuous && args.count.is_some() {
         args.count = None; // Continuous mode overrides count
+    }
+
+    // Ensure we have at least one target source (positional, file, or cidr)
+    if args.targets.is_empty() && args.targets_file.is_none() && args.cidrs.is_empty() {
+        return Err(anyhow::anyhow!("No targets provided. Specify targets, --file, or --cidr."));
+    }
+    // Validate output
+    if args.json_output && args.csv_output {
+        return Err(anyhow::anyhow!("--json and --csv cannot be used together"));
     }
     
     Ok(args)
