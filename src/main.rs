@@ -3,6 +3,7 @@ mod dns;
 mod icmp;
 mod stats;
 mod utils;
+mod netif;
 
 use icmp::IcmpSocket;
 use stats::PingStatistics;
@@ -57,6 +58,24 @@ async fn main() {
     if let Some(source_addr) = args.source_address {
         if let Err(e) = socket.bind_to_interface(source_addr) {
             utils::exit_with_error(&format!("无法绑定到源地址 {}: {}", source_addr, e), 1);
+        }
+    } else if let Some(iface) = &args.interface {
+        match netif::find_source_ip_for_iface(iface, is_ipv6) {
+            Ok(src) => {
+                if let Err(e) = socket.bind_to_interface(src) {
+                    utils::exit_with_error(&format!("无法绑定到网卡 {} 的源地址 {}: {}", iface, src, e), 1);
+                }
+            }
+            Err(e) => {
+                utils::exit_with_error(&format!("根据网卡 '{}' 选择源地址失败: {}", iface, e), 1);
+            }
+        }
+    }
+
+    // Apply TTL / Hop Limit if provided
+    if let Some(ttl) = args.ttl {
+        if let Err(e) = socket.set_ttl(ttl) {
+            utils::print_warning(&format!("设置 {} 失败: {}", if is_ipv6 { "Hop Limit(IPv6)" } else { "TTL(IPv4)" }, e));
         }
     }
 

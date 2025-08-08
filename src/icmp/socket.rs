@@ -146,6 +146,21 @@ impl IcmpSocket {
         }
     }
     
+    pub fn set_ttl(&self, ttl: u32) -> anyhow::Result<()> {
+        if self.is_ipv6 {
+            // IPv6 uses unicast hop limit
+            self.socket
+                .set_unicast_hops_v6(ttl)
+                .map_err(|e| anyhow::anyhow!("Failed to set IPv6 hop limit: {}", e))?;
+        } else {
+            // IPv4 TTL
+            self.socket
+                .set_ttl(ttl)
+                .map_err(|e| anyhow::anyhow!("Failed to set IPv4 TTL: {}", e))?;
+        }
+        Ok(())
+    }
+    
     pub fn bind_to_interface(&self, source_addr: IpAddr) -> anyhow::Result<()> {
         let bind_addr = match source_addr {
             IpAddr::V4(addr) => SocketAddr::new(IpAddr::V4(addr), 0),

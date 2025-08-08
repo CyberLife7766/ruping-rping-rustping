@@ -81,6 +81,11 @@ rping 192.168.1.1 -t
 ruping google.com -l 64 -w 2000 -4
 rustping 8.8.8.8 -a -n 10
 rping localhost -i 32
+
+# 指定源地址/网卡示例
+ruping example.com --source 192.168.1.10
+ruping example.com --iface "Ethernet" --ttl 64
+ruping example.com -6 --iface 12 --ttl 32
 ```
 
 ## 📖 支持的参数
@@ -108,6 +113,7 @@ rping localhost -i 32
   -w <timeout>          等待每次回复的超时时间(毫秒)
   -R                    同样使用路由标头测试反向路由(仅IPv6)
   -S <srcaddr>          要使用的源地址
+  --iface <name|index>  指定网卡/接口（网卡友好名/描述/适配器名，或 ifIndex 数值）
   -c <compartment>      路由隔离舱标识符
   -p                    Ping Hyper-V网络虚拟化提供程序地址
   -4                    强制使用IPv4
@@ -154,6 +160,42 @@ cargo test
 
 # 测试功能
 .\test_all_features.cmd
+
+## 📦 发布/打包
+
+面向开发者的发布与打包说明：
+
+1) Release 构建二进制
+
+```powershell
+# 可选：先激活虚拟环境（若存在）
+if (Test-Path .\.venv\Scripts\Activate.ps1) { . .\.venv\Scripts\Activate.ps1 }
+
+# 构建 release
+cargo build --release
+
+# 产物位置
+# ruping\target\release\ruping.exe
+```
+
+2) 生成安装器（可选）
+
+```powershell
+# 在 ruping 目录执行 PowerShell 时请使用相对路径调用脚本
+.\build_installer.cmd
+
+# 或在 CMD 下执行
+cmd /c build_installer.cmd
+
+# 产物位置（已在 .gitignore 忽略）
+# ruping\release\ruping-installer.exe
+# ruping\release\ruping-uninstaller.exe
+```
+
+说明：
+- 使用原始套接字需要以管理员身份运行程序或控制台。
+- 指定网卡/接口：`--iface <名称|索引>` 支持网卡友好名/描述/适配器名或 ifIndex 数值；当同时指定 `--source` 与 `--iface` 时，以 `--source` 为准。
+- IPv6 下 `--ttl` 设置为 Hop Limit。
 ```
 
 ## 贡献

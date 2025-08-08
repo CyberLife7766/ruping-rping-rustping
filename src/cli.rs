@@ -18,6 +18,7 @@ pub struct PingArgs {
     pub timeout: Option<u32>,
     pub reverse_route: bool,
     pub source_address: Option<IpAddr>,
+    pub interface: Option<String>,
     pub compartment: Option<u32>,
     pub hyper_v: bool,
     pub force_ipv4: bool,
@@ -42,6 +43,7 @@ impl Default for PingArgs {
             timeout: Some(4000), // Windows default 4 seconds
             reverse_route: false,
             source_address: None,
+            interface: None,
             compartment: None,
             hyper_v: false,
             force_ipv4: false,
@@ -155,6 +157,12 @@ pub fn build_cli() -> Command {
                 .value_parser(clap::value_parser!(IpAddr))
         )
         .arg(
+            Arg::new("interface")
+                .long("iface")
+                .help("Network interface name or index to bind as source")
+                .value_name("iface")
+        )
+        .arg(
             Arg::new("compartment")
                 .short('c')
                 .help("Routing compartment identifier")
@@ -225,6 +233,10 @@ pub fn parse_args() -> anyhow::Result<PingArgs> {
     
     if let Some(source_address) = matches.get_one::<IpAddr>("source_address") {
         args.source_address = Some(*source_address);
+    }
+
+    if let Some(iface) = matches.get_one::<String>("interface") {
+        args.interface = Some(iface.clone());
     }
     
     if let Some(compartment) = matches.get_one::<u32>("compartment") {

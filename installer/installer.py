@@ -179,10 +179,23 @@ class RuPingStandaloneInstaller:
                     new_path = f"{current_path};{path_to_add}"
                     winreg.SetValueEx(key, "PATH", 0, winreg.REG_EXPAND_SZ, new_path)
                     
-                    # Broadcast environment change
+                    # Broadcast environment change (avoid hang using timeout)
                     HWND_BROADCAST = 0xFFFF
                     WM_SETTINGCHANGE = 0x001A
-                    ctypes.windll.user32.SendMessageW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment")
+                    SMTO_ABORTIFHUNG = 0x0002
+                    try:
+                        result = ctypes.c_ulong()
+                        ctypes.windll.user32.SendMessageTimeoutW(
+                            HWND_BROADCAST,
+                            WM_SETTINGCHANGE,
+                            0,
+                            ctypes.c_wchar_p("Environment"),
+                            SMTO_ABORTIFHUNG,
+                            3000,
+                            ctypes.byref(result),
+                        )
+                    except Exception as e:
+                        print(f"Warning: Failed to broadcast environment change (non-fatal): {e}")
                     
                     print(f"Added {path_to_add} to system PATH")
                     return True

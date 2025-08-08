@@ -75,3 +75,4 @@ __pycache__/
 
 # Release artifacts (keep source, exclude binaries)
 release/*.exe
+build_output.txt
